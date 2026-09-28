@@ -24,31 +24,85 @@ export type EnquiryPayload = {
 
 const STORAGE_KEY = "ashrith:enquiries";
 
-/** Configure this once a backend or form service is available. */
-export const ENQUIRY_ENDPOINT: string | null = null;
+/** Google Apps Script endpoint for form submissions */
+export const ENQUIRY_ENDPOINT: string =
+  "https://script.google.com/macros/s/AKfycbxqBen1QxpsLplfBCDosSLChFOgvudmXYIP8tMz7yisd0qIsd38dG1nO-DXimFl2GZE/exec";
 
 export async function deliverEnquiry(payload: EnquiryPayload): Promise<void> {
-  if (ENQUIRY_ENDPOINT) {
+  // Map the payload to Google Apps Script expected format
+  const formData = new URLSearchParams();
+  formData.append("name", payload.fullName);
+  formData.append("phone", payload.phone);
+  formData.append("email", payload.email);
+
+  // Build subject based on form type
+  let subject = "";
+  if (payload.source === "admissions") {
+    subject = `Admission Enquiry - ${payload.programme || "Programme"} at ${payload.institution || "Institution"}`;
+  } else if (payload.subject) {
+    subject = payload.subject;
+  } else {
+    subject = "General Enquiry";
+  }
+  formData.append("subject", subject);
+
+  // Build message with all relevant details
+  let message = payload.message || "";
+  if (payload.source === "admissions") {
+    const details = [
+      payload.programme && `Programme: ${payload.programme}`,
+      payload.institution && `Institution: ${payload.institution}`,
+      payload.qualification && `Qualification: ${payload.qualification}`,
+      payload.city && `City: ${payload.city}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    message = details + (message ? `\n\nAdditional Message:\n${message}` : "");
+  }
+  formData.append("message", message);
+
+  try {
     const res = await fetch(ENQUIRY_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: formData,
     });
-    if (!res.ok) throw new Error(`Enquiry submission failed (${res.status})`);
-    return;
-  }
 
-  // Fallback: keep the submission on the device so nothing is lost before
-  // the backend is connected.
-  await new Promise((r) => setTimeout(r, 700));
-  try {
-    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as EnquiryPayload[];
-    existing.push(payload);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(-50)));
-  } catch {
-    /* storage unavailable — ignore */
+    const responseText = await res.text();
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      // If response is not JSON, consider it an error
+      throw new Error("Invalid response from server");
+    }
+
+    if (!result.success) {
+      throw new Error(result.message || "Enquiry submission failed");
+    }
+
+    // Also store locally as backup
+    try {
+      const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as EnquiryPayload[];
+      existing.push(payload);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(-50)));
+    } catch {
+      /* storage unavailable — ignore */
+    }
+
+    if (import.meta.env.DEV) console.info("[Ashrith] Enquiry submitted successfully:", payload);
+  } catch (error) {
+    // Store locally if submission fails
+    try {
+      const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as EnquiryPayload[];
+      existing.push(payload);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(-50)));
+    } catch {
+      /* storage unavailable — ignore */
+    }
+
+    if (import.meta.env.DEV) console.error("[Ashrith] Enquiry submission failed:", error);
+    throw error;
   }
-  if (import.meta.env.DEV) console.info("[Ashrith] Enquiry captured:", payload);
 }
 
 export function readStoredEnquiries(): EnquiryPayload[] {
