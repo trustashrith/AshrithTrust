@@ -26,7 +26,7 @@ const STORAGE_KEY = "ashrith:enquiries";
 
 /** Google Apps Script endpoint for form submissions */
 export const ENQUIRY_ENDPOINT: string =
-  "https://script.google.com/macros/s/AKfycbxqBen1QxpsLplfBCDosSLChFOgvudmXYIP8tMz7yisd0qIsd38dG1nO-DXimFl2GZE/exec";
+  "https://script.google.com/macros/s/AKfycbxdRq1eLcF_o5ne0iMR2gwT3Crl3W9dTc0mlryenUCnXZItdXoWuJz8usgLsYLD-rxQ/exec";
 
 export async function deliverEnquiry(payload: EnquiryPayload): Promise<void> {
   // Build subject based on form type
