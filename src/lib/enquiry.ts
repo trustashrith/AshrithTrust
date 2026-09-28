@@ -29,12 +29,6 @@ export const ENQUIRY_ENDPOINT: string =
   "https://script.google.com/macros/s/AKfycbxqBen1QxpsLplfBCDosSLChFOgvudmXYIP8tMz7yisd0qIsd38dG1nO-DXimFl2GZE/exec";
 
 export async function deliverEnquiry(payload: EnquiryPayload): Promise<void> {
-  // Map the payload to Google Apps Script expected format
-  const formData = new URLSearchParams();
-  formData.append("name", payload.fullName);
-  formData.append("phone", payload.phone);
-  formData.append("email", payload.email);
-
   // Build subject based on form type
   let subject = "";
   if (payload.source === "admissions") {
@@ -44,7 +38,6 @@ export async function deliverEnquiry(payload: EnquiryPayload): Promise<void> {
   } else {
     subject = "General Enquiry";
   }
-  formData.append("subject", subject);
 
   // Build message with all relevant details
   let message = payload.message || "";
@@ -59,12 +52,22 @@ export async function deliverEnquiry(payload: EnquiryPayload): Promise<void> {
       .join("\n");
     message = details + (message ? `\n\nAdditional Message:\n${message}` : "");
   }
-  formData.append("message", message);
+
+  // Map the payload to Google Apps Script expected format
+  const formData = new URLSearchParams();
+  formData.append("name", String(payload.fullName).trim());
+  formData.append("phone", String(payload.phone).trim());
+  formData.append("email", String(payload.email).trim());
+  formData.append("subject", String(subject).trim());
+  formData.append("message", String(message).trim());
 
   try {
     const res = await fetch(ENQUIRY_ENDPOINT, {
       method: "POST",
-      body: formData,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData.toString(),
     });
 
     const responseText = await res.text();
@@ -72,8 +75,16 @@ export async function deliverEnquiry(payload: EnquiryPayload): Promise<void> {
     try {
       result = JSON.parse(responseText);
     } catch {
-      // If response is not JSON, consider it an error
-      throw new Error("Invalid response from server");
+      // If response is not JSON, log the response for debugging
+      if (import.meta.env.DEV) {
+        console.warn("[Ashrith] Non-JSON response:", responseText);
+      }
+      // Consider it successful if we got a response (Google Scripts sometimes return HTML on redirect)
+      if (res.ok) {
+        result = { success: true };
+      } else {
+        throw new Error("Invalid response from server");
+      }
     }
 
     if (!result.success) {
